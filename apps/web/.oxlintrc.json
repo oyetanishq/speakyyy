@@ -1,0 +1,33 @@
+{
+    "$schema": "./node_modules/oxlint/configuration_schema.json",
+    "plugins": ["react", "typescript", "oxc", "jsx-a11y", "unicorn", "import"],
+    "categories": {
+        "correctness": "error",
+        "suspicious": "warn"
+    },
+    "rules": {
+        "react/rules-of-hooks": "error",
+        "react/only-export-components": ["warn", { "allowConstantExport": true }],
+        "no-restricted-imports": [
+            "error",
+            {
+                "paths": [
+                    {
+                        "name": "pdfjs-dist",
+                        "message": "Import from @/lib/pdf/load - worker setup lives there."
+                    }
+                ]
+            }
+        ],
+        "react/react-in-jsx-scope": "off",
+        "import/no-unassigned-import": "off"
+    },
+    "overrides": [
+        {
+            "files": ["src/lib/pdf/load.ts"],
+            "rules": {
+                "no-restricted-imports": "off"
+            }
+        }
+    ]
+}

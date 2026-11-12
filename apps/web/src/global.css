@@ -1,0 +1,256 @@
+@import "tailwindcss";
+
+/* ============================================================================
+   1 · NAMESPACE RESET - we author every colour and face; Tailwind's defaults
+   would only collide with the tokens below.
+   ========================================================================== */
+@theme {
+    --color-*: initial;
+    --font-*: initial;
+}
+
+/* ============================================================================
+   2 · PALETTE - raw values per scheme, exposed to Tailwind as inline aliases
+   so `bg-paper` etc. follow light/dark without a `dark:` variant anywhere.
+   The PDF page itself is always white, so the highlight colours (multiplied
+   onto the page) are the same in both schemes.
+   ========================================================================== */
+:root {
+    color-scheme: light;
+    --paper: #f6f3ec;
+    --paper-2: #ece7dc;
+    --stage: #dcd6c9;
+    --ink: #1d1b16;
+    --ink-2: #57524a;
+    --ink-3: #8a8476;
+    --line: color-mix(in oklab, #1d1b16 13%, transparent);
+    --accent: #2f5bd3;
+    --accent-ink: #ffffff;
+    --danger: #b4321f;
+    --ok: #1f7a3d;
+    --warn-bg: #fbecc6;
+    --warn-ink: #6b4a00;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        color-scheme: dark;
+        --paper: #17181c;
+        --paper-2: #1f2025;
+        --stage: #0f1013;
+        --ink: #ecebe6;
+        --ink-2: #b0aea6;
+        --ink-3: #7c7a73;
+        --line: color-mix(in oklab, #ecebe6 14%, transparent);
+        --accent: #7f9dff;
+        --accent-ink: #0d1020;
+        --danger: #e0644f;
+        --ok: #6fd08f;
+        --warn-bg: #3b3014;
+        --warn-ink: #f3d58a;
+    }
+}
+
+@theme inline {
+    --color-paper: var(--paper);
+    --color-paper-2: var(--paper-2);
+    --color-stage: var(--stage);
+    --color-ink: var(--ink);
+    --color-ink-2: var(--ink-2);
+    --color-ink-3: var(--ink-3);
+    --color-line: var(--line);
+    --color-accent: var(--accent);
+    --color-accent-ink: var(--accent-ink);
+    --color-accent-soft: color-mix(in oklab, var(--accent) 15%, transparent);
+    --color-danger: var(--danger);
+    --color-ok: var(--ok);
+    --color-warn-bg: var(--warn-bg);
+    --color-warn-ink: var(--warn-ink);
+}
+
+@theme static {
+    --color-white: #ffffff;
+    --color-black: #000000;
+    /* Reading highlights, multiplied onto the white page. */
+    --color-sentence: rgb(255 221 87 / 0.42);
+    --color-word: rgb(255 145 30 / 0.62);
+
+    --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+    --shadow-page: 0 1px 2px rgb(0 0 0 / 0.12), 0 4px 16px rgb(0 0 0 / 0.08);
+}
+
+/* ============================================================================
+   3 · BASE
+   ========================================================================== */
+@layer base {
+    html,
+    body,
+    #root {
+        height: 100%;
+    }
+
+    body {
+        background: var(--paper);
+        color: var(--ink);
+        font-family: var(--font-sans);
+        -webkit-font-smoothing: antialiased;
+        overscroll-behavior: none;
+    }
+
+    button:not(:disabled),
+    [role="button"]:not(:disabled) {
+        cursor: pointer;
+    }
+
+    :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+    }
+
+    kbd {
+        font-family: var(--font-mono);
+        font-size: 0.85em;
+        padding: 0.05em 0.35em;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        background: var(--paper-2);
+    }
+}
+
+/* ============================================================================
+   4 · COMPONENT PRIMITIVES
+   ========================================================================== */
+@utility btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    height: 2.25rem;
+    padding-inline: 0.85rem;
+    border-radius: 0.6rem;
+    border: 1px solid var(--line);
+    background: var(--paper);
+    color: var(--ink);
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition:
+        background-color 120ms,
+        filter 120ms;
+
+    &:hover:not(:disabled) {
+        background: var(--paper-2);
+    }
+    &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+}
+
+@utility btn-primary {
+    background: var(--accent);
+    border-color: transparent;
+    color: var(--accent-ink);
+
+    &:hover:not(:disabled) {
+        background: var(--accent);
+        filter: brightness(1.08);
+    }
+}
+
+@utility icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    color: var(--ink-2);
+    transition:
+        background-color 120ms,
+        color 120ms;
+
+    &:hover:not(:disabled) {
+        background: color-mix(in oklab, var(--ink) 8%, transparent);
+        color: var(--ink);
+    }
+    &:disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
+    }
+}
+
+@utility field {
+    height: 2.4rem;
+    padding-inline: 0.7rem;
+    border-radius: 0.6rem;
+    border: 1px solid var(--line);
+    background: var(--paper);
+    color: var(--ink);
+    font-size: 0.9rem;
+
+    &::placeholder {
+        color: var(--ink-3);
+    }
+    &:focus {
+        outline: 2px solid var(--accent);
+        outline-offset: -1px;
+    }
+}
+
+/* ============================================================================
+   5 · PDF.JS TEXT LAYER
+   The subset of pdfjs-dist/web/pdf_viewer.css (Apache-2.0) that TextLayer
+   needs. Spans are transparent; they exist for selection, click-to-read and
+   to measure word boxes for the highlight. --total-scale-factor is set per
+   page by components/viewer/pdf-page.tsx.
+   ========================================================================== */
+.textLayer {
+    position: absolute;
+    text-align: initial;
+    inset: 0;
+    overflow: clip;
+    opacity: 1;
+    line-height: 1;
+    letter-spacing: normal;
+    word-spacing: normal;
+    text-size-adjust: none;
+    forced-color-adjust: none;
+    transform-origin: 0 0;
+    caret-color: CanvasText;
+
+    --min-font-size: 1;
+    --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+    --min-font-size-inv: calc(1 / var(--min-font-size));
+
+    :is(span, br) {
+        color: transparent;
+        position: absolute;
+        white-space: pre;
+        cursor: pointer;
+        transform-origin: 0% 0%;
+        user-select: text;
+    }
+
+    > :not(.markedContent),
+    .markedContent span:not(.markedContent) {
+        z-index: 1;
+        --font-height: 0;
+        font-size: calc(var(--text-scale-factor) * var(--font-height));
+        --scale-x: 1;
+        --rotate: 0deg;
+        transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+    }
+
+    .markedContent {
+        display: contents;
+    }
+
+    ::selection {
+        background: color-mix(in srgb, AccentColor, transparent 60%);
+        color: transparent;
+    }
+
+    br::selection {
+        background: transparent;
+    }
+}
