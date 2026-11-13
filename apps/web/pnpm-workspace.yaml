@@ -1,0 +1,2 @@
+minimumReleaseAgeExclude:
+  - phonon-tts@0.7.1

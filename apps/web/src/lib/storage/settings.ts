@@ -4,18 +4,26 @@
  */
 export type Settings = {
     llm: { baseUrl: string; model: string; apiKey: string };
-    speech: { voiceURI: string | null; rate: number };
+    /** voice: a Phonon voice id ("default" = the model's bundled one); null = Russell. */
+    speech: { voice: string | null; rate: number };
 };
 
 const KEY = "pdf-speak:settings";
 
 export const DEFAULT_SETTINGS: Settings = {
     llm: { baseUrl: "", model: "", apiKey: "" },
-    speech: { voiceURI: null, rate: 1 },
+    speech: { voice: null, rate: 1 },
 };
 
 export const RATE_MIN = 0.5;
 export const RATE_MAX = 2.5;
+
+/** Earlier builds stored "phonon:<id>" or "browser:<uri>" (browser voices are gone). */
+function readVoice(v: unknown): string | null {
+    if (typeof v !== "string" || v.startsWith("browser:")) return null;
+    const id = v.startsWith("phonon:") ? v.slice("phonon:".length) : v;
+    return id || null;
+}
 
 function read(): Settings {
     try {
@@ -24,7 +32,10 @@ function read(): Settings {
         const parsed = JSON.parse(raw) as Partial<Settings>;
         return {
             llm: { ...DEFAULT_SETTINGS.llm, ...parsed.llm },
-            speech: { ...DEFAULT_SETTINGS.speech, ...parsed.speech },
+            speech: {
+                voice: readVoice(parsed.speech?.voice),
+                rate: typeof parsed.speech?.rate === "number" ? clampRate(parsed.speech.rate) : 1,
+            },
         };
     } catch {
         return DEFAULT_SETTINGS;

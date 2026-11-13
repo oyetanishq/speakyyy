@@ -17,6 +17,9 @@ importers:
       pdfjs-dist:
         specifier: ^6.5.438
         version: 6.5.438
+      phonon-tts:
+        specifier: 0.7.1
+        version: 0.7.1
       react:
         specifier: ^19.3.1
         version: 19.3.1
@@ -644,6 +647,9 @@ packages:
     resolution: {integrity: sha512-vg8Pw1x+AFKy4AMDvhuWl5cOYV8d698UoEANoFFhc79hqXDnZQqnOXoxw3HG907WHOg1JYOvLhP756boddFxpA==}
     engines: {node: '>=22.13.0 || >=24'}
 
+  phonon-tts@0.7.1:
+    resolution: {integrity: sha512-GcZocsKijvnw/imx2gzbay6yRcLhZG/sbVRw1OWRdwfXbPB1W7csWSgfWl4rO5GWWTZnSSjVhkPklsk9iH9/vg==}
+
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
 
@@ -1138,6 +1144,8 @@ snapshots:
   pdfjs-dist@6.5.438:
     optionalDependencies:
       '@napi-rs/canvas': 1.1.0
+
+  phonon-tts@0.7.1: {}
 
   picocolors@1.1.1: {}
 

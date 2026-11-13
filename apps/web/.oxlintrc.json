@@ -1,13 +1,25 @@
 {
     "$schema": "./node_modules/oxlint/configuration_schema.json",
-    "plugins": ["react", "typescript", "oxc", "jsx-a11y", "unicorn", "import"],
+    "plugins": [
+        "react",
+        "typescript",
+        "oxc",
+        "jsx-a11y",
+        "unicorn",
+        "import"
+    ],
     "categories": {
         "correctness": "error",
         "suspicious": "warn"
     },
     "rules": {
         "react/rules-of-hooks": "error",
-        "react/only-export-components": ["warn", { "allowConstantExport": true }],
+        "react/only-export-components": [
+            "warn",
+            {
+                "allowConstantExport": true
+            }
+        ],
         "no-restricted-imports": [
             "error",
             {
@@ -15,6 +27,10 @@
                     {
                         "name": "pdfjs-dist",
                         "message": "Import from @/lib/pdf/load - worker setup lives there."
+                    },
+                    {
+                        "name": "phonon-tts",
+                        "message": "Import from @/lib/speech/phonon - model loading and the synthesis queue live there."
                     }
                 ]
             }
@@ -24,7 +40,10 @@
     },
     "overrides": [
         {
-            "files": ["src/lib/pdf/load.ts"],
+            "files": [
+                "src/lib/pdf/load.ts",
+                "src/lib/speech/phonon.ts"
+            ],
             "rules": {
                 "no-restricted-imports": "off"
             }

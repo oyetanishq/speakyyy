@@ -1,4 +1,6 @@
 import type { DocText, Sentence } from "@/lib/pdf/text-model";
+import type { Playback } from "@/lib/speech/engine";
+import { DEFAULT_VOICE, speakPhonon } from "@/lib/speech/phonon";
 
 /**
  * What to actually say for a sentence. This is the seam for Mode 2: read-aloud
@@ -38,40 +40,27 @@ export type NarratorState = {
     status: NarratorStatus;
     sentence: number;
     word: number | null;
-    /** How the word cursor is driven: real boundary events, or a time estimate. */
-    tracking: "boundary" | "estimated" | null;
+    /** Playing, but waiting for audio (model download, synthesis). */
+    buffering: boolean;
     error: string | null;
 };
 
-/** Average speaking speed at rate 1, used when a voice sends no word events. */
-const CHARS_PER_SECOND = 14.5;
-/** How long to wait for the first boundary event before estimating. */
-const BOUNDARY_GRACE_MS = 450;
-
-const synth: SpeechSynthesis | null = typeof window !== "undefined" && "speechSynthesis" in window ? window.speechSynthesis : null;
+/** Sentences synthesised ahead of the one playing. */
+const PREFETCH = 2;
 
 class Narrator {
-    readonly supported = synth !== null;
+    /** Phonon runs in a module worker on WebAssembly. */
+    readonly supported = typeof Worker !== "undefined" && typeof WebAssembly === "object";
 
-    #state: NarratorState = { status: "idle", sentence: 0, word: 0, tracking: null, error: null };
+    #state: NarratorState = { status: "idle", sentence: 0, word: 0, buffering: false, error: null };
     #listeners = new Set<() => void>();
     #doc: DocText | null = null;
     #script: Script = readAloud;
-    #voice: SpeechSynthesisVoice | null = null;
+    #voice = DEFAULT_VOICE;
     #rate = 1;
     /** Bumped on every start/stop; stale callbacks compare and bail. */
     #session = 0;
-    /**
-     * The live utterance - held so Chrome can't GC it mid-speech (which drops
-     * its end event) - and the controller that detaches its listeners.
-     */
-    #current: { utterance: SpeechSynthesisUtterance; listeners: AbortController } | null = null;
-    #estimateTimer: ReturnType<typeof setInterval> | null = null;
-
-    constructor() {
-        // Chrome keeps speaking across reloads unless cancelled.
-        if (typeof window !== "undefined") window.addEventListener("pagehide", () => synth?.cancel());
-    }
+    #playback: Playback | null = null;
 
     subscribe = (fn: () => void) => {
         this.#listeners.add(fn);
@@ -90,28 +79,34 @@ class Narrator {
     setDoc(doc: DocText | null) {
         this.#halt();
         this.#doc = doc;
-        this.#set({ status: "idle", sentence: 0, word: 0, tracking: null, error: null });
+        this.#set({ status: "idle", sentence: 0, word: 0, buffering: false, error: null });
     }
 
     setScript(script: Script) {
         this.#script = script;
-        this.#restartIfPlaying();
+        this.#restart();
     }
 
-    setVoice(voice: SpeechSynthesisVoice | null) {
-        if (voice?.voiceURI === this.#voice?.voiceURI) return;
+    /** A Phonon voice id: one from the catalog, or BUNDLED_VOICE. */
+    setVoice(voice: string) {
+        if (voice === this.#voice) return;
         this.#voice = voice;
-        this.#restartIfPlaying();
+        this.#restart();
     }
 
     setRate(rate: number) {
         if (rate === this.#rate) return;
         this.#rate = rate;
-        this.#restartIfPlaying();
+        this.#playback?.setRate(rate);
     }
 
     play() {
-        if (!this.#doc || !synth) return;
+        if (!this.#doc || !this.supported) return;
+        if (this.#state.status === "paused" && this.#playback) {
+            this.#playback.resume();
+            this.#set({ status: "playing", error: null });
+            return;
+        }
         const { sentence, word } = this.#state;
         const atEnd = this.#doc.done && sentence >= this.#doc.sentences.length;
         void this.#speakFrom(atEnd ? 0 : sentence, atEnd ? 0 : (word ?? 0));
@@ -119,8 +114,8 @@ class Narrator {
 
     pause() {
         if (this.#state.status !== "playing") return;
-        this.#halt();
-        this.#set({ status: "paused" });
+        this.#playback?.pause();
+        this.#set({ status: "paused", buffering: false });
     }
 
     toggle() {
@@ -130,7 +125,7 @@ class Narrator {
 
     stop() {
         this.#halt();
-        this.#set({ status: "idle" });
+        this.#set({ status: "idle", buffering: false });
     }
 
     /** Jump to a sentence/word. Keeps playing if it was playing. */
@@ -144,7 +139,8 @@ class Narrator {
             void this.#speakFrom(s, word);
         } else {
             this.#halt();
-            this.#set({ sentence: s, word, status: this.#state.status === "playing" ? "paused" : this.#state.status });
+            const status = this.#state.status === "playing" ? "paused" : this.#state.status;
+            this.#set({ sentence: s, word, status, buffering: false });
         }
     }
 
@@ -160,32 +156,42 @@ class Narrator {
 
     // ---------------------------------------------------------------- engine
 
-    #restartIfPlaying() {
+    /** Apply a voice/script change: replay from the current word if playing. */
+    #restart() {
         if (this.#state.status === "playing") void this.#speakFrom(this.#state.sentence, this.#state.word ?? 0);
+        else if (this.#state.status === "paused") this.#halt(); // resume re-speaks with the new settings
     }
 
     #halt() {
         this.#session++;
-        this.#stopEstimate();
-        this.#current?.listeners.abort();
-        this.#current = null;
-        synth?.cancel();
+        this.#playback?.stop();
+        this.#playback = null;
     }
 
-    #stopEstimate() {
-        if (this.#estimateTimer) clearInterval(this.#estimateTimer);
-        this.#estimateTimer = null;
+    /** Texts of the next sentences, synthesised ahead so playback has no gaps. */
+    #upcoming(after: number): string[] {
+        const out: string[] = [];
+        for (let k = 1; k <= PREFETCH; k++) {
+            const s = this.#doc?.sentences[after + k];
+            if (!s) break;
+            const u = this.#script(s, 0);
+            if (!(u instanceof Promise)) out.push(u.text);
+        }
+        return out;
     }
 
     async #speakFrom(sentenceIndex: number, wordIndex: number) {
         const doc = this.#doc;
-        if (!doc || !synth) return;
+        const voice = this.#voice;
+        if (!doc) return;
         this.#halt();
         const session = this.#session;
-        this.#set({ status: "playing", sentence: sentenceIndex, word: wordIndex, error: null });
+        this.#set({ status: "playing", sentence: sentenceIndex, word: wordIndex, buffering: true, error: null });
 
         if (!(await doc.waitFor(sentenceIndex))) {
-            if (session === this.#session) this.#set({ status: "idle", sentence: doc.sentences.length, word: null });
+            if (session === this.#session) {
+                this.#set({ status: "idle", sentence: doc.sentences.length, word: null, buffering: false });
+            }
             return;
         }
         if (session !== this.#session) return;
@@ -195,66 +201,31 @@ class Narrator {
         const utt = await this.#script(sentence, from);
         if (session !== this.#session) return;
 
-        const u = new SpeechSynthesisUtterance(utt.text);
-        u.rate = this.#rate;
-        if (this.#voice) {
-            u.voice = this.#voice;
-            u.lang = this.#voice.lang;
-        }
-
-        let sawBoundary = false;
-        const setWord = (ci: number) => {
-            const w = utt.wordAt(ci);
-            if (w !== this.#state.word) this.#set({ word: w });
+        const live = () => session === this.#session;
+        const handlers = {
+            onStart: () => {
+                if (live()) this.#set({ buffering: false });
+            },
+            onPosition: (charIndex: number) => {
+                if (!live()) return;
+                const word = utt.wordAt(charIndex);
+                if (word !== this.#state.word) this.#set({ word });
+            },
+            onEnd: () => {
+                if (live()) void this.#speakFrom(sentenceIndex + 1, 0);
+            },
+            onError: (error: string) => {
+                if (!live()) return;
+                this.#halt();
+                this.#set({ status: "paused", buffering: false, error });
+            },
         };
 
-        const listeners = new AbortController();
-        const on = <K extends keyof SpeechSynthesisUtteranceEventMap>(
-            type: K,
-            fn: (e: SpeechSynthesisUtteranceEventMap[K]) => void,
-        ) => u.addEventListener(type, fn, { signal: listeners.signal });
-
-        on("start", () => {
-            if (session !== this.#session) return;
-            const startedAt = performance.now();
-            this.#estimateTimer = setInterval(() => {
-                if (session !== this.#session || sawBoundary) return this.#stopEstimate();
-                const elapsed = performance.now() - startedAt;
-                if (elapsed < BOUNDARY_GRACE_MS) return;
-                if (this.#state.tracking !== "estimated") this.#set({ tracking: "estimated" });
-                setWord(Math.floor((elapsed / 1000) * CHARS_PER_SECOND * this.#rate));
-            }, 80);
-        });
-        on("boundary", (e) => {
-            if (session !== this.#session || e.name !== "word") return;
-            if (!sawBoundary) {
-                sawBoundary = true;
-                this.#stopEstimate();
-                if (this.#state.tracking !== "boundary") this.#set({ tracking: "boundary" });
-            }
-            setWord(e.charIndex);
-        });
-        on("end", () => {
-            if (session !== this.#session) return;
-            this.#stopEstimate();
-            void this.#speakFrom(sentenceIndex + 1, 0);
-        });
-        on("error", (e) => {
-            if (session !== this.#session) return;
-            if (e.error === "interrupted" || e.error === "canceled") return;
-            this.#halt();
-            const message =
-                e.error === "not-allowed"
-                    ? "The browser blocked speech. Click play again."
-                    : `Speech failed (${e.error}). Try another voice.`;
-            this.#set({ status: "paused", error: message });
-        });
-
-        this.#current = { utterance: u, listeners };
-        // Chrome can get stuck "paused" after the tab was hidden.
-        if (synth.paused) synth.resume();
-        synth.speak(u);
+        this.#playback = speakPhonon(utt.text, voice, this.#rate, this.#upcoming(sentenceIndex), handlers);
     }
 }
 
 export const narrator = new Narrator();
+
+// Dev-only handle for poking at playback from the console and e2e scripts.
+if (import.meta.env.DEV) Object.assign(window, { __narrator: narrator });

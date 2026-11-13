@@ -12,6 +12,7 @@ import { useReader } from "@/hooks/use-reader";
 import { useShortcuts } from "@/hooks/use-shortcuts";
 import { useSettings } from "@/hooks/use-stores";
 import { narrator } from "@/lib/speech/narrator";
+import { prepareVoice } from "@/lib/speech/phonon";
 
 /**
  * Single screen, no router: top bar, the PDF, and the player. The narrator and
@@ -30,6 +31,11 @@ export default function App() {
     const { rate } = useSettings().speech;
     useEffect(() => narrator.setVoice(voice), [voice]);
     useEffect(() => narrator.setRate(rate), [rate]);
+    // Warm the model and the chosen voice up front: a one-time ~65 MB download,
+    // then < 1 s from the browser cache. Failure shows in the player bar (Retry).
+    useEffect(() => {
+        if (narrator.supported) prepareVoice(voice).catch(() => {});
+    }, [voice]);
 
     return (
         <div className="flex h-dvh flex-col">
@@ -46,7 +52,7 @@ export default function App() {
 
             {!narrator.supported && (
                 <div className="bg-warn-bg px-4 py-2 text-sm text-warn-ink">
-                    This browser has no speech synthesis, so PDFs can be viewed but not read aloud.
+                    This browser can't run the voice model (it needs Web Workers and WebAssembly), so PDFs can be viewed but not read aloud.
                 </div>
             )}
             {status.kind === "error" && (

@@ -52,9 +52,18 @@ function pdfjsAssets(): Plugin {
     };
 }
 
+// Cross-origin isolation gives phonon-tts SharedArrayBuffer, so speech is
+// generated on several threads instead of one. vercel.json sends the same.
+const isolation = {
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Embedder-Policy": "require-corp",
+};
+
 // https://vite.dev/config/
 export default defineConfig({
     base: process.env.BASE_PATH ?? "/",
+    server: { headers: isolation },
+    preview: { headers: isolation },
     plugins: [react(), tailwindcss(), pdfjsAssets()],
     resolve: {
         alias: {
